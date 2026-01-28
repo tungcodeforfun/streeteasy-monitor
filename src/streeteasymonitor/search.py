@@ -70,14 +70,20 @@ class Search:
         print(f'URL: {self.url}')
 
         try:
+            print(f'DEBUG: Navigating to URL...')
             self.page.goto(self.url, wait_until='domcontentloaded', timeout=60000)
+            print(f'DEBUG: Page loaded, waiting for listing cards...')
             # Wait for listing cards to appear
             self.page.wait_for_selector('[data-testid="listing-card"]', timeout=30000)
+            print(f'DEBUG: Listing cards found, getting content...')
             content = self.page.content()
-            parser = Parser(content.encode(), self.db, self.page)
+            print(f'DEBUG: Content length: {len(content)} chars')
+            parser = Parser(content.encode(), self.db, self.page, self.kwargs)
             self.listings = parser.listings
         except Exception as e:
             print(f'{get_datetime()} Error fetching page: {e}\n')
+            import traceback
+            traceback.print_exc()
 
         if not self.listings:
             print(f'{get_datetime()} No new listings.\n')
@@ -94,13 +100,14 @@ class Parser:
 
     price_pattern = re.compile(r'[$,]')
 
-    def __init__(self, content: bytes, db, page=None) -> None:
+    def __init__(self, content: bytes, db, page=None, kwargs=None) -> None:
         """Initialize the parse object.
 
         Args:
             content (bytes): HTML content of a successful GET request to the search URL.
             db (Database): Database instance used for fetching listing IDs that already exist in the database.
             page: Playwright page instance for fetching listing details.
+            kwargs: Search parameters from the form (min_price, max_price, areas, etc.)
 
         Attributes:
             soup (bs4.BeautifulSoup): Beautiful Soup object for parsing HTML contents.
@@ -110,6 +117,7 @@ class Parser:
         self.soup = BeautifulSoup(content, 'html.parser')
         self.existing_ids = db.get_existing_ids()
         self.page = page
+        self.kwargs = kwargs or {}
         self._description_cache = {}
 
     def parse(self, card) -> dict[str, str]:
@@ -187,11 +195,13 @@ class Parser:
     def filter(self, target) -> bool:
         """Filter a listing based on attributes not captured by StreetEasy's interface natively."""
         if target['listing_id'] in self.existing_ids:
+            print(f"  FILTERED: {target['address']} - already in database")
             return False
 
         for key, substrings in Config.filters.items():
             target_value = target.get(key, '')
             if any(substring in target_value for substring in substrings):
+                print(f"  FILTERED: {target['address']} - {key} contains blocked substring")
                 return False
 
         # Note: We search with status:open so inactive listings shouldn't appear
@@ -200,9 +210,9 @@ class Parser:
         if status and status.lower() not in ('', 'active', 'open'):
             return False
 
-        # Filter out listings outside price range
-        min_price = Config.defaults.get('min_price', 0)
-        max_price = Config.defaults.get('max_price', float('inf'))
+        # Filter out listings outside price range (use search kwargs, fall back to Config.defaults)
+        min_price = self.kwargs.get('min_price') or Config.defaults.get('min_price', 0)
+        max_price = self.kwargs.get('max_price') or Config.defaults.get('max_price', float('inf'))
         try:
             price = int(target.get('price', 0))
             if price < min_price or price > max_price:
@@ -210,8 +220,8 @@ class Parser:
         except (ValueError, TypeError):
             pass
 
-        # Filter out listings not in configured neighborhoods
-        configured_areas = Config.defaults.get('areas', [])
+        # Filter out listings not in configured neighborhoods (use search kwargs, fall back to Config.defaults)
+        configured_areas = self.kwargs.get('areas') or Config.defaults.get('areas', [])
         if configured_areas:
             neighborhood = target.get('neighborhood', '')
             # Check if neighborhood matches any configured area (case-insensitive partial match)
@@ -226,8 +236,12 @@ class Parser:
             match = Parser.street_pattern.search(address)
             if match:
                 street_num = int(match.group(1))
+                print(f"  DEBUG: Address '{address}' -> street {street_num}, max {max_street}")
                 if street_num > max_street:
+                    print(f"  FILTERED: {address} - street number {street_num} > {max_street}")
                     return False
+        else:
+            print(f"  DEBUG: max_street not set")
 
         # Filter out listings with restricted housing keywords in description
         description_filters = getattr(Config, 'description_filters', [])
@@ -243,6 +257,11 @@ class Parser:
     def listings(self) -> dict[str, str]:
         """Return all parsed and filtered listings."""
         cards = self.soup.select('[data-testid="listing-card"]')
+        print(f'DEBUG: Found {len(cards)} listing cards on page')
         parsed = [self.parse(card) for card in cards]
+        print(f'DEBUG: Parsed {len(parsed)} listings')
+        if parsed:
+            print(f'DEBUG: First parsed listing: {parsed[0]}')
         filtered = [card for card in parsed if self.filter(card)]
+        print(f'DEBUG: After filtering: {len(filtered)} listings remain')
         return filtered

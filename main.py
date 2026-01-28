@@ -5,6 +5,7 @@ from src.streeteasymonitor.config import Config
 def main(**kwargs):
     with Monitor(**kwargs) as monitor:
         monitor.run()
+        return monitor.listings
 
 
 if __name__ == '__main__':

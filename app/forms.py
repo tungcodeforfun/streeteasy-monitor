@@ -2,6 +2,8 @@ from flask_wtf import FlaskForm
 from wtforms import SelectMultipleField, IntegerField, SubmitField, BooleanField
 from wtforms.validators import NumberRange, InputRequired, Optional
 
+from src.streeteasymonitor.config import Config
+
 neighborhoods = {
     "Brooklyn": [
         "Greenpoint",
@@ -127,6 +129,7 @@ extras = {
 class SearchForm(FlaskForm):
     min_price = IntegerField(
         'Min Price',
+        default=Config.defaults.get('min_price', 0),
         validators=[
             InputRequired(),
             NumberRange(
@@ -143,6 +146,7 @@ class SearchForm(FlaskForm):
     )
     max_price = IntegerField(
         'Max Price',
+        default=Config.defaults.get('max_price', 2500),
         validators=[
             InputRequired(),
             NumberRange(
@@ -158,6 +162,7 @@ class SearchForm(FlaskForm):
     )
     no_fee = BooleanField(
         'No fee',
+        default=Config.defaults.get('no_fee', False),
         validators=[Optional()],
         render_kw={
             'class': 'form-check-input',
@@ -165,6 +170,7 @@ class SearchForm(FlaskForm):
     )
     min_beds = IntegerField(
         'Min Beds',
+        default=Config.defaults.get('min_beds', 0),
         validators=[
             InputRequired(),
             NumberRange(
@@ -179,6 +185,7 @@ class SearchForm(FlaskForm):
     )
     max_beds = IntegerField(
         'Max Beds',
+        default=Config.defaults.get('max_beds', 1),
         validators=[
             InputRequired(),
             NumberRange(
@@ -193,6 +200,7 @@ class SearchForm(FlaskForm):
     )
     baths = IntegerField(
         'Bathrooms',
+        default=Config.defaults.get('baths', 1),
         validators=[
             InputRequired(),
             NumberRange(
@@ -208,6 +216,7 @@ class SearchForm(FlaskForm):
     areas = SelectMultipleField(
         'Neighborhoods',
         choices=neighborhoods,
+        default=Config.defaults.get('areas', []),
         validators=[InputRequired()],
         render_kw={
             'placeholder': 'Select neighborhoods',
@@ -216,7 +225,7 @@ class SearchForm(FlaskForm):
     )
     amenities = SelectMultipleField(
         'Amenities',
-        default=[],
+        default=Config.defaults.get('amenities', []),
         choices=list(extras.items()),
         validators=[Optional()],
         render_kw={
@@ -227,7 +236,7 @@ class SearchForm(FlaskForm):
     max_street = IntegerField(
         'Max Street Number',
         validators=[Optional()],
-        default=None,
+        default=getattr(Config, 'max_street_number', 70),
         render_kw={
             'placeholder': 'e.g. 70',
             'class': 'form-control',
@@ -235,7 +244,7 @@ class SearchForm(FlaskForm):
     )
     dry_run = BooleanField(
         'Dry run (preview only, no messages sent)',
-        default=True,
+        default=getattr(Config, 'dry_run', True),
         validators=[Optional()],
         render_kw={
             'class': 'form-check-input',
