@@ -43,6 +43,8 @@ The application consists of:
 - A form that can be used to check for listings based on specified criteria
 - A table listing every rental that has been contacted so far, sorted by most recent
 
+**Note:** The Flask form provides basic search options. Advanced filters (street number limits, description keyword filters) are configured in `config.py` and apply to all searches.
+
 When possible, listings link to their corresponding page on [Paddaddy](https://paddaddy.app/), and otherwise link to the original page on StreetEasy.
 
 ![screenshot](assets/screenshot.png)
@@ -70,9 +72,10 @@ $ pyenv local .venv
 ### Install requirements
 ```bash
 (.venv) $ pip install -r requirements.txt
-(.venv) $ pip install playwright playwright-stealth
 (.venv) $ playwright install chromium
 ```
+
+**Note:** The script opens a visible browser window to bypass bot detection. This requires a display (won't work in headless server environments without modification).
 
 ## Configuration
 
@@ -105,6 +108,8 @@ The `cron` directory contains helper scripts for running the monitor on a schedu
 - `create_cron.sh`: Saves a cron command to `cron.dat`
 - `start_cron.sh`: Starts the cron job from `cron.dat`
 - `stop_cron.sh`: Stops any active cron job
+
+**Note:** Cron jobs require a display environment since the script uses a visible browser. For headless servers, modify `monitor.py` to set `headless=True` (may trigger bot detection).
 
 ## Important Notes
 Whenever you send a message on StreetEasy, you will receive an automated email at the address you provide indicating that the listing has been contacted. You will then continue to receive automated messages about any updates to the listing (e.g. price changes, rental status). This means that if you run the script repeatedly, you will have a lot of emails to sort through, so you might want to create a new email address if you don't want to clog your inbox.
