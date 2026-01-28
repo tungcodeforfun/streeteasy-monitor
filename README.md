@@ -4,23 +4,26 @@ Python script that checks StreetEasy for new rentals matching search criteria an
 Includes a Flask application that provides a messaging interface and displays contacted listings, plus optional helper scripts for setting up a cron job to run the script continuously.
 
 ### Features
-- Uses a [Requests](https://pypi.org/project/requests/) Session with [fake-useragent](https://pypi.org/project/fake-useragent/) to bypass request blocking
+- Uses [Playwright](https://playwright.dev/) with stealth mode to bypass bot detection
 - [BeautifulSoup4](https://pypi.org/project/beautifulsoup4/) for HTML parsing
 - SQLite database
 - Simple web app implemented with [Flask](https://flask.palletsprojects.com/en/3.0.x/), [Flask-WTF](https://flask-wtf.readthedocs.io/en/1.2.x/), [HTMX](https://htmx.org/), [Bootstrap](https://getbootstrap.com/) and [Tom Select](https://tom-select.js.org/)
 - Integration with [Paddaddy](https://paddaddy.app/) for added rental info
-- Helper scripts for cron job management
+- Advanced filtering: neighborhood, price range, street number, and description keywords
+- Dry run mode to preview listings before sending messages
+- Filters out senior housing, income-restricted, and lottery units
 
 ### How it works
 1. Constructs a StreetEasy URL corresponding to search criteria
 2. Scrapes, parses and filters listings from search results page
-3. Messages any listings that haven't already been contacted
-4. Stores details of newly contacted listings in a database
+3. Checks listing descriptions to filter out restricted housing
+4. Messages any listings that haven't already been contacted (unless dry run mode)
+5. Stores details of newly contacted listings in a database
 
 ## Table of Contents
-- [Usage](#Usage)  
+- [Usage](#Usage)
 - [Installation](#Installation)
-- [Configuration](#Configuration)  
+- [Configuration](#Configuration)
 - [Important Notes](#Important-Notes)
 
 ## Usage
@@ -31,7 +34,7 @@ Run the script using the values in the `defaults` dictionary found in `src/stree
 (.venv) $ python main.py
 ```
 
-### Run Flask application 
+### Run Flask application
 The application will run on port 8002 by default (can be changed in `app/app.py`).
 ```bash
 (.venv) $ python -m app.app
@@ -44,40 +47,14 @@ When possible, listings link to their corresponding page on [Paddaddy](https://p
 
 ![screenshot](assets/screenshot.png)
 
-### (Optional) Create cron job
-Setting up a cron job is the most straightforward way to run the script continuously, but it can be difficult to configure correctly. A collection of bash scripts are included to help streamline the process.
-
-Navigate to the cron folder and make all scripts executable
-```bash
-(.venv) $ cd cron
-(.venv) $ chmod +x `ls *.sh`
-```
-
-Create cron job
-
-*Note: if using a virtual environment, it must be activated for the script to select the correct Python path.*
-```bash
-(.venv) $ ./create_cron.sh
-```
-
-Start the cron job
-```bash
-(.venv) $ ./start_cron.sh
-```
-
-Stop the cron job
-```bash
-(.venv) $ ./stop_cron.sh
-```
-
 ## Installation
 ### Clone project
 ```bash
-$ git clone https://github.com/joeschermer/streeteasy-monitor.git
+$ git clone https://github.com/tungcodeforfun/streeteasy-monitor.git
 $ cd streeteasy-monitor
 ````
-### (Recommended) Install Python and set up virtual environment using [pyenv](https://github.com/pyenv/)  
-1. Install Python 3.12.3  
+### (Recommended) Install Python and set up virtual environment using [pyenv](https://github.com/pyenv/)
+1. Install Python 3.12.3
 ```bash
 $ pyenv install 3.12.3
 ```
@@ -93,6 +70,8 @@ $ pyenv local .venv
 ### Install requirements
 ```bash
 (.venv) $ pip install -r requirements.txt
+(.venv) $ pip install playwright playwright-stealth
+(.venv) $ playwright install chromium
 ```
 
 ## Configuration
@@ -111,79 +90,26 @@ When the script runs, any matching listings will be sent the above information, 
 *Note: this information is not visible or accessible anywhere other than your local `.env` file.*
 
 ### Configure default search parameters and optional filters
-If you choose to run the script by itself or in a cron job, edit the `defaults` dictionary found in `src/streeteasymonitor/config.py` according to your preferences. When running the script using the Flask application, your form inputs override the defaults defined here.
+Edit the `defaults` dictionary found in `src/streeteasymonitor/config.py` according to your preferences.
 
-Example:
->
-> ```python
-> defaults = {
->    'min_price': 1000,
->    'max_price': 4500,
->    'min_beds': 1,
->    'max_beds': 2,
->    'baths': 1,
->    'areas': [
->        'Bedford-Stuyvesant',
->        'Carroll Gardens',
->        'Upper East Side',
->    ],
->    'amenities': [
->        'pets',
->    ],
->    'no_fee': True,
->}
->```
->In this example, the script will check for rentals priced between $1,000 and $4,500, with 1-2 bedrooms and at least 1 bathroom, in the neighborhoods of Bedford-Stuyvesant, Carroll Gardens, and the Upper East Side, that allow pets and have no fee.
-
-There is also a `filters` dictionary, which defines substrings for filtering results not otherwise captured by StreetEasy (e.g. addresses on specific streets, URLs for "featured" listings which include the substring `'?featured=1'`).
-
-Example:
->
-> ```python
-> filters = {
->    'url': [
->        '?featured=1',
->        '?infeed=1',
->    ],
->    'address': [
->        'Fulton',
->        'Atlantic',
->        'Herkimer',
->    ],
->    'neighborhood': [
->        'New Development',
->        'Ocean Hill',
->    ],
->}
->```
-> Here, "featured" listings will be excluded, and so will any rentals with addresses on Fulton, Atlantic, or Herkimer, or in the Ocean Hill sub-neighborhood.
+Key settings:
+- `min_price` / `max_price`: Price range
+- `min_beds` / `max_beds`: Bedroom range (0 = studio)
+- `areas`: List of neighborhoods to search
+- `dry_run`: Set to `True` to preview without sending messages
+- `max_street_number`: Filter out addresses above this street number
+- `description_filters`: Keywords to filter out (senior housing, income restricted, etc.)
 
 ### Configure cron helper scripts for script scheduling
-The `cron` directory contains the following files, which can be configured according to your preferences.
-- `create_cron.sh`: Saves a cron command to `cron.dat`. The default cron job will run `main.py` every 8 minutes, but can be changed by reassigning `CRON_SCHEDULE`. Refer to [cron.help](https://cron.help/) for schedule formatting.
-- `start_cron.sh`: Starts the cron job from `cron.dat`. The job will log stdout/stderr to `cron.log` by default. *(Note: this will overwrite any active cron jobs)*
-- `stop_cron.sh`: Stops any active cron job and saves to `cron.dat`.
+The `cron` directory contains helper scripts for running the monitor on a schedule.
+- `create_cron.sh`: Saves a cron command to `cron.dat`
+- `start_cron.sh`: Starts the cron job from `cron.dat`
+- `stop_cron.sh`: Stops any active cron job
 
 ## Important Notes
 Whenever you send a message on StreetEasy, you will receive an automated email at the address you provide indicating that the listing has been contacted. You will then continue to receive automated messages about any updates to the listing (e.g. price changes, rental status). This means that if you run the script repeatedly, you will have a lot of emails to sort through, so you might want to create a new email address if you don't want to clog your inbox.
 
-This is a blunt tool that casts a wide net by design and there may be many listings you contact that aren't interesting to you. You might also annoy brokers who represent multiple listings if you inadvertently send them the same message over and over again. Try to be as specific as possible with your search criteria to avoid these issues.
-
-## Todo
-- [x] Add more filtering options (no fee, pets, amenities, etc.)
-- [x] Add no fee and amenities options in Flask
-- [x] Persist form fields after successful submission
-- [x] Implement dynamic form submission
-- [ ] Add navbar, improve page layout
-- [ ] Add form fields for name, email, message, and phone number
-- [ ] Add more methods for running continuously (APScheduler?)
-- [ ] Add pagination for results table
-- [ ] Add alert messages
-- [ ] Document all classes
-- [ ] Build tests
-
-
 ## Disclaimer
-Users of this software are solely responsible for ensuring their use complies with StreetEasy's Terms of Service and all applicable laws and regulations. This tool is intended for personal, non-commercial use only. The authors do not endorse or encourage any use of this software that may violate StreetEasy's policies or any third-party rights.
+Users of this software are solely responsible for ensuring their use complies with StreetEasy's Terms of Service and all applicable laws and regulations. This tool is intended for personal, non-commercial use only.
 
 Use of this software is at your own risk. The authors disclaim any responsibility for any misuse or any consequences that may arise from the use of this software.

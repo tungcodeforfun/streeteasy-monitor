@@ -23,7 +23,7 @@ class Search:
             monitor (Monitor): A Monitor instance encapsulating a session, a database connection, and keyword arguments for constructing a search URL.
 
         Attributes:
-            session (requests.Session): The session instance.
+            page (playwright.Page): The Playwright page instance for fetching.
             db (Database): The database instance.
             kwargs (dict[str, str]): The search parameter components.
             codes (list[str, str]): The StreetEasy neighborhood codes corresponding to selected neighborhood names.
@@ -37,7 +37,7 @@ class Search:
             listings (list[dict[str, str]]): Listings corresponding to the current search - initially empty.
         """
 
-        self.session = monitor.session
+        self.page = monitor.page
         self.db = monitor.db
         self.kwargs = monitor.kwargs
 
@@ -68,10 +68,16 @@ class Search:
         """Check the search URL for new listings."""
         print(f'Running script with parameters:\n{json.dumps(self.parameters, indent=2)}\n')
         print(f'URL: {self.url}')
-        self.r = self.session.get(self.url)
-        if self.r.status_code == 200:
-            parser = Parser(self.r.content, self.db)
+
+        try:
+            self.page.goto(self.url, wait_until='domcontentloaded', timeout=60000)
+            # Wait for listing cards to appear
+            self.page.wait_for_selector('[data-testid="listing-card"]', timeout=30000)
+            content = self.page.content()
+            parser = Parser(content.encode(), self.db, self.page)
             self.listings = parser.listings
+        except Exception as e:
+            print(f'{get_datetime()} Error fetching page: {e}\n')
 
         if not self.listings:
             print(f'{get_datetime()} No new listings.\n')
@@ -88,12 +94,13 @@ class Parser:
 
     price_pattern = re.compile(r'[$,]')
 
-    def __init__(self, content: bytes, db) -> None:
+    def __init__(self, content: bytes, db, page=None) -> None:
         """Initialize the parse object.
 
         Args:
             content (bytes): HTML content of a successful GET request to the search URL.
             db (Database): Database instance used for fetching listing IDs that already exist in the database.
+            page: Playwright page instance for fetching listing details.
 
         Attributes:
             soup (bs4.BeautifulSoup): Beautiful Soup object for parsing HTML contents.
@@ -102,18 +109,40 @@ class Parser:
 
         self.soup = BeautifulSoup(content, 'html.parser')
         self.existing_ids = db.get_existing_ids()
+        self.page = page
+        self._description_cache = {}
 
     def parse(self, card) -> dict[str, str]:
         """Parse the contents of one listing."""
-        listing_id = card.select_one('div.SRPCarousel-container')['data-listing-id']
-        url = card.select_one('a.listingCard-globalLink')['href']
-        price = Parser.price_pattern.sub('', card.select_one('span.price').text)
-        address = card.select_one('address.listingCard-addressLabel').text.strip()
-        neighborhood = (
-            card.select_one('div.listingCardBottom--upperBlock p.listingCardLabel')
-            .text.split(' in ')[-1]
-            .strip()
-        )
+        # Find URL and address from the listing link
+        link = card.select_one('a[href*="streeteasy.com/building"]')
+        url = link['href'] if link else ''
+        address = link.text.strip() if link else ''
+
+        # Extract listing ID from URL (e.g., /building/name/unit-id)
+        listing_id = ''
+        if url:
+            match = re.search(r'/building/[^/]+/([^?]+)', url)
+            if match:
+                listing_id = match.group(1)
+
+        # Find price - look for element with PriceInfo in class
+        price_elem = card.select_one('[class*="PriceInfo"]')
+        price = ''
+        if price_elem:
+            price_text = price_elem.get_text()
+            # Extract first price (e.g., "$3,600" from "$3,600base rent...")
+            price_match = re.search(r'\$[\d,]+', price_text)
+            if price_match:
+                price = Parser.price_pattern.sub('', price_match.group())
+
+        # Find neighborhood from title (e.g., "Rental unit in Bushwick")
+        title_elem = card.select_one('[class*="ListingDescription-module__title"]')
+        neighborhood = ''
+        if title_elem:
+            title_text = title_elem.text.strip()
+            if ' in ' in title_text:
+                neighborhood = title_text.split(' in ')[-1].strip()
 
         return {
             'listing_id': listing_id,
@@ -122,6 +151,38 @@ class Parser:
             'address': address,
             'neighborhood': neighborhood,
         }
+
+    # Pattern to extract street number from address (e.g., "123 East 45th Street" -> 45)
+    street_pattern = re.compile(r'(?:East|West|E|W)?\s*(\d+)(?:st|nd|rd|th)?\s*(?:Street|St)', re.IGNORECASE)
+
+    def get_description(self, url: str) -> str:
+        """Fetch the description from a listing's detail page."""
+        if not self.page or not url:
+            return ''
+
+        if url in self._description_cache:
+            return self._description_cache[url]
+
+        try:
+            self.page.goto(url, wait_until='domcontentloaded', timeout=30000)
+            # Wait for description to load
+            self.page.wait_for_selector('[data-testid="listing-details-description"], [class*="Description"]', timeout=10000)
+            content = self.page.content()
+            soup = BeautifulSoup(content, 'html.parser')
+
+            # Try multiple selectors for description
+            desc_elem = soup.select_one('[data-testid="listing-details-description"]')
+            if not desc_elem:
+                desc_elem = soup.select_one('[class*="Description"]')
+            if not desc_elem:
+                desc_elem = soup.select_one('.listing-description')
+
+            description = desc_elem.get_text(separator=' ', strip=True) if desc_elem else ''
+            self._description_cache[url] = description
+            return description
+        except Exception:
+            self._description_cache[url] = ''
+            return ''
 
     def filter(self, target) -> bool:
         """Filter a listing based on attributes not captured by StreetEasy's interface natively."""
@@ -133,12 +194,55 @@ class Parser:
             if any(substring in target_value for substring in substrings):
                 return False
 
+        # Note: We search with status:open so inactive listings shouldn't appear
+        # If a status field is present and not active, filter it out
+        status = target.get('status', '')
+        if status and status.lower() not in ('', 'active', 'open'):
+            return False
+
+        # Filter out listings outside price range
+        min_price = Config.defaults.get('min_price', 0)
+        max_price = Config.defaults.get('max_price', float('inf'))
+        try:
+            price = int(target.get('price', 0))
+            if price < min_price or price > max_price:
+                return False
+        except (ValueError, TypeError):
+            pass
+
+        # Filter out listings not in configured neighborhoods
+        configured_areas = Config.defaults.get('areas', [])
+        if configured_areas:
+            neighborhood = target.get('neighborhood', '')
+            # Check if neighborhood matches any configured area (case-insensitive partial match)
+            if not any(area.lower() in neighborhood.lower() or neighborhood.lower() in area.lower()
+                       for area in configured_areas):
+                return False
+
+        # Filter out addresses above max street number
+        max_street = getattr(Config, 'max_street_number', None)
+        if max_street:
+            address = target.get('address', '')
+            match = Parser.street_pattern.search(address)
+            if match:
+                street_num = int(match.group(1))
+                if street_num > max_street:
+                    return False
+
+        # Filter out listings with restricted housing keywords in description
+        description_filters = getattr(Config, 'description_filters', [])
+        if description_filters and self.page:
+            url = target.get('url', '')
+            description = self.get_description(url).lower()
+            if any(keyword.lower() in description for keyword in description_filters):
+                return False
+
         return True
 
     @property
     def listings(self) -> dict[str, str]:
         """Return all parsed and filtered listings."""
-        cards = self.soup.select('li.searchCardList--listItem')
+        cards = self.soup.select('[data-testid="listing-card"]')
         parsed = [self.parse(card) for card in cards]
         filtered = [card for card in parsed if self.filter(card)]
         return filtered

@@ -1,4 +1,6 @@
 beautifulsoup4==4.12.3
+playwright>=1.40.0
+playwright-stealth>=2.0.0
 blinker==1.8.2
 Bootstrap-Flask==2.4.0
 bs4==0.0.2
