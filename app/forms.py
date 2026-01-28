@@ -59,6 +59,7 @@ neighborhoods = {
         "Two Bridges",
         "Battery Park City",
         "Chelsea",
+        "West Chelsea",
         "Greenwich Village",
         "East Village",
         "Noho",
@@ -68,9 +69,17 @@ neighborhoods = {
         "Midtown West",
         "Murray Hill",
         "Kips Bay",
+        "Gramercy Park",
+        "Turtle Bay",
+        "Sutton Place",
+        "Beekman",
         "Upper West Side",
         "Upper East Side",
+        "Lenox Hill",
+        "Yorkville",
+        "Carnegie Hill",
         "Hudson Yards",
+        "Hudson Square",
         "Morningside Heights",
         "Hamilton Heights",
         "Washington Heights",
@@ -79,6 +88,7 @@ neighborhoods = {
         "West Harlem",
         "Central Harlem",
         "East Harlem",
+        "South Harlem",
         "West Village",
         "Flatiron",
         "NoMad",
@@ -212,6 +222,23 @@ class SearchForm(FlaskForm):
         render_kw={
             'placeholder': 'Select amenities',
             'class': 'form-select',
+        },
+    )
+    max_street = IntegerField(
+        'Max Street Number',
+        validators=[Optional()],
+        default=None,
+        render_kw={
+            'placeholder': 'e.g. 70',
+            'class': 'form-control',
+        },
+    )
+    dry_run = BooleanField(
+        'Dry run (preview only, no messages sent)',
+        default=True,
+        validators=[Optional()],
+        render_kw={
+            'class': 'form-check-input',
         },
     )
 

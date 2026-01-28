@@ -7,6 +7,7 @@ import requests
 import timeago
 
 from src.streeteasymonitor.database import Database
+from src.streeteasymonitor.config import Config
 
 from .forms import SearchForm
 
@@ -52,11 +53,20 @@ def create_app():
 
         if request.method == 'POST':
             if form.validate_on_submit():
+                # Extract form data
                 kwargs = {
                     field.name: field.data or field.default
                     for field in form
-                    if field.name != 'csrf_token' and field.name != 'submit'
+                    if field.name not in ('csrf_token', 'submit', 'dry_run', 'max_street')
                 }
+
+                # Set config options from form
+                Config.dry_run = form.dry_run.data
+                if form.max_street.data:
+                    Config.max_street_number = form.max_street.data
+                else:
+                    Config.max_street_number = None
+
                 session['data'] = kwargs
                 main(**kwargs)
                 return render_template('table.html', listings=db.get_listings_sorted())
