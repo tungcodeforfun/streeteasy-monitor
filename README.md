@@ -115,6 +115,11 @@ dry_run = True   # Preview listings without sending messages
                  # Set to False when ready to send inquiries
 ```
 
+#### Export to CSV
+```python
+export_csv = True   # Export listings to data/listings_YYYYMMDD_HHMMSS.csv
+```
+
 #### Street filter
 ```python
 max_street_number = 70   # Filter out addresses above 70th Street

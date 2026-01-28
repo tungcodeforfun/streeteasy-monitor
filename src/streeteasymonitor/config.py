@@ -60,6 +60,9 @@ class Config:
     # Set to True to preview listings without sending messages
     dry_run = True
 
+    # Set to True to export listings to CSV file in data/ folder
+    export_csv = True
+
     filters = {
         'url': [
             '?featured=1',
