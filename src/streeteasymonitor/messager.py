@@ -1,5 +1,5 @@
 from .config import Config
-from .utils import get_datetime
+from .utils import get_datetime, export_to_csv
 
 
 class Messager:
@@ -127,6 +127,7 @@ class Messager:
 
     def send_messages(self):
         dry_run = getattr(Config, 'dry_run', False)
+        should_export = getattr(Config, 'export_csv', False)
 
         for listing in self.listings:
             print(f'{get_datetime()}\nNew listing: {listing["address"]}')
@@ -148,6 +149,12 @@ class Messager:
                     print('  Error sending message: Failed to submit message\n')
             except Exception as e:
                 print(f'  Error sending message: {e}\n')
+
+        # Export to CSV if enabled
+        if should_export and self.listings:
+            csv_path = export_to_csv(self.listings)
+            if csv_path:
+                print(f'{get_datetime()} Exported {len(self.listings)} listings to {csv_path}\n')
 
     def submit_message(self, pageflow_id, reply_token):
         message_variables = {
