@@ -93,15 +93,49 @@ When the script runs, any matching listings will be sent the above information, 
 *Note: this information is not visible or accessible anywhere other than your local `.env` file.*
 
 ### Configure default search parameters and optional filters
-Edit the `defaults` dictionary found in `src/streeteasymonitor/config.py` according to your preferences.
+Edit `src/streeteasymonitor/config.py` according to your preferences.
 
-Key settings:
-- `min_price` / `max_price`: Price range
-- `min_beds` / `max_beds`: Bedroom range (0 = studio)
-- `areas`: List of neighborhoods to search
-- `dry_run`: Set to `True` to preview without sending messages
-- `max_street_number`: Filter out addresses above this street number
-- `description_filters`: Keywords to filter out (senior housing, income restricted, etc.)
+#### Search defaults
+```python
+defaults = {
+    'min_price': 0,
+    'max_price': 2500,
+    'min_beds': 0,        # 0 = studio
+    'max_beds': 1,
+    'baths': 1,
+    'areas': ['East Village', 'West Village', ...],
+    'amenities': [],      # e.g., ['pets', 'doorman', 'laundry']
+    'no_fee': False,
+}
+```
+
+#### Dry run mode
+```python
+dry_run = True   # Preview listings without sending messages
+                 # Set to False when ready to send inquiries
+```
+
+#### Street filter
+```python
+max_street_number = 70   # Filter out addresses above 70th Street
+```
+
+#### Description filters
+Automatically filters out listings containing these keywords:
+```python
+description_filters = [
+    'senior housing',
+    'income restricted',
+    'minimum income',
+    'maximum income',
+    '62 years or older',
+    'lottery',
+    'affordable housing',
+    'section 8',
+    'hdfc',
+    ...
+]
+```
 
 ### Configure cron helper scripts for script scheduling
 The `cron` directory contains helper scripts for running the monitor on a schedule.
