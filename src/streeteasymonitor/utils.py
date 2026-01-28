@@ -58,6 +58,12 @@ def export_to_csv(listings: list[dict], filename: str = None) -> str:
     with open(filepath, 'w', newline='', encoding='utf-8') as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction='ignore')
         writer.writeheader()
-        writer.writerows(listings)
+        for listing in listings:
+            # Ensure URL is complete
+            url = listing.get('url', '')
+            if url and not url.startswith('http'):
+                url = 'https://streeteasy.com' + url
+            row = {**listing, 'url': url}
+            writer.writerow(row)
 
     return filepath
