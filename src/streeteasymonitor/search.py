@@ -65,28 +65,66 @@ class Search:
         self.listings = []
 
     def fetch(self) -> list[dict[str, str]]:
-        """Check the search URL for new listings."""
+        """Check the search URL for new listings, paginating through all results."""
+        import time
+
         print(f'Running script with parameters:\n{json.dumps(self.parameters, indent=2)}\n')
-        print(f'URL: {self.url}')
+        print(f'Base URL: {self.url}')
+
+        all_listings = []
+        page_num = 1
+        seen_ids = set()  # Track listing IDs to detect when we've seen all listings
 
         try:
-            print(f'DEBUG: Navigating to URL...')
-            self.page.goto(self.url, wait_until='domcontentloaded', timeout=60000)
-            print(f'DEBUG: Page loaded, waiting for listing cards...')
-            # Wait for listing cards to appear
-            self.page.wait_for_selector('[data-testid="listing-card"]', timeout=30000)
-            print(f'DEBUG: Listing cards found, getting content...')
-            content = self.page.content()
-            print(f'DEBUG: Content length: {len(content)} chars')
-            parser = Parser(content.encode(), self.db, self.page, self.kwargs)
-            self.listings = parser.listings
+            while True:
+                # StreetEasy uses &page=N for pagination
+                page_url = f"{self.url}&page={page_num}" if page_num > 1 else self.url
+                print(f'\n--- Page {page_num} ---')
+                print(f'URL: {page_url}')
+
+                self.page.goto(page_url, wait_until='domcontentloaded', timeout=60000)
+
+                # Wait for listing cards to appear
+                try:
+                    self.page.wait_for_selector('[data-testid="listing-card"]', timeout=15000)
+                except Exception:
+                    print(f'No listings found on page {page_num}, stopping pagination.')
+                    break
+
+                content = self.page.content()
+                parser = Parser(content.encode(), self.db, self.page, self.kwargs)
+                page_listings = parser.listings
+
+                # Check if we're seeing duplicate listings (end of results)
+                new_listings = []
+                for listing in page_listings:
+                    if listing['listing_id'] not in seen_ids:
+                        seen_ids.add(listing['listing_id'])
+                        new_listings.append(listing)
+
+                print(f'Found {len(new_listings)} new listings on page {page_num}')
+
+                if not new_listings:
+                    print(f'No new unique listings on page {page_num}, stopping pagination.')
+                    break
+
+                all_listings.extend(new_listings)
+
+                # Add delay between pages to avoid rate limiting
+                time.sleep(2)
+                page_num += 1
+
         except Exception as e:
             print(f'{get_datetime()} Error fetching page: {e}\n')
             import traceback
             traceback.print_exc()
 
+        self.listings = all_listings
+
         if not self.listings:
             print(f'{get_datetime()} No new listings.\n')
+        else:
+            print(f'\nTotal: {len(self.listings)} listings across {page_num} page(s)')
 
         return self.listings
 
