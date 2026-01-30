@@ -166,7 +166,7 @@ class Parser:
         Args:
             content (bytes): HTML content of a successful GET request to the search URL.
             db (Database): Database instance used for fetching listing IDs that already exist in the database.
-            page: Playwright page instance for fetching listing details.
+            page: Page wrapper instance for fetching listing details.
             kwargs: Search parameters from the form (min_price, max_price, areas, etc.)
 
         Attributes:
