@@ -141,13 +141,28 @@ description_filters = [
 ]
 ```
 
-### Configure cron helper scripts for script scheduling
-The `cron` directory contains helper scripts for running the monitor on a schedule.
+### Running on a schedule
+
+#### Cross-platform scheduler (recommended)
+Works on macOS, Windows, and Linux:
+```bash
+# Run every 8 minutes (default)
+(.venv) $ python scheduler.py
+
+# Run every 5 minutes
+(.venv) $ python scheduler.py --interval 5
+
+# Run once and exit
+(.venv) $ python scheduler.py --once
+```
+
+#### macOS/Linux cron (alternative)
+The `cron` directory contains helper scripts:
 - `create_cron.sh`: Saves a cron command to `cron.dat`
 - `start_cron.sh`: Starts the cron job from `cron.dat`
 - `stop_cron.sh`: Stops any active cron job
 
-**Note:** Cron jobs require a display environment since the script uses a visible browser. Headless mode is not recommended as it may trigger bot detection.
+**Note:** The script requires a display environment since Chrome must be visible. Headless mode is not recommended as it may trigger bot detection.
 
 ## Important Notes
 Whenever you send a message on StreetEasy, you will receive an automated email at the address you provide indicating that the listing has been contacted. You will then continue to receive automated messages about any updates to the listing (e.g. price changes, rental status). This means that if you run the script repeatedly, you will have a lot of emails to sort through, so you might want to create a new email address if you don't want to clog your inbox.
