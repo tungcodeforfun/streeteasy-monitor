@@ -1,5 +1,7 @@
 import json
+import random
 import re
+import time
 
 from bs4 import BeautifulSoup
 
@@ -66,8 +68,6 @@ class Search:
 
     def fetch(self) -> list[dict[str, str]]:
         """Check the search URL for new listings, paginating through all results."""
-        import time
-
         print(f'Running script with parameters:\n{json.dumps(self.parameters, indent=2)}\n')
         print(f'Base URL: {self.url}')
 
@@ -83,6 +83,28 @@ class Search:
                 print(f'URL: {page_url}')
 
                 self.page.goto(page_url, wait_until='domcontentloaded', timeout=60000)
+
+                # Human-like delay after page load
+                time.sleep(random.uniform(2, 4))
+
+                # Check for bot detection captcha
+                content = self.page.content()
+                if 'Press & Hold' in content or 'confirm you are' in content:
+                    print('\n*** Bot detection triggered! ***')
+                    print('Please complete the "Press & Hold" captcha in the browser window.')
+                    print('Waiting for you to complete it...')
+                    # Wait up to 60 seconds for captcha to be completed
+                    for _ in range(60):
+                        time.sleep(1)
+                        content = self.page.content()
+                        if 'Press & Hold' not in content and 'confirm you are' not in content:
+                            print('Captcha completed!')
+                            break
+                    time.sleep(random.uniform(2, 4))
+
+                # Simulate mouse movement to appear more human
+                self.page.mouse.move(random.randint(100, 500), random.randint(100, 400))
+                time.sleep(random.uniform(0.5, 1.5))
 
                 # Wait for listing cards to appear
                 try:
@@ -110,8 +132,8 @@ class Search:
 
                 all_listings.extend(new_listings)
 
-                # Add delay between pages to avoid rate limiting
-                time.sleep(2)
+                # Add random delay between pages to avoid rate limiting
+                time.sleep(random.uniform(3, 6))
                 page_num += 1
 
         except Exception as e:
@@ -210,6 +232,8 @@ class Parser:
             return self._description_cache[url]
 
         try:
+            # Random delay before fetching each listing detail
+            time.sleep(random.uniform(1.5, 3))
             self.page.goto(url, wait_until='domcontentloaded', timeout=30000)
             # Wait for description to load
             self.page.wait_for_selector('[data-testid="listing-details-description"], [class*="Description"]', timeout=10000)
