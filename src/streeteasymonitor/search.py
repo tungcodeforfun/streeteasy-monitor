@@ -25,7 +25,7 @@ class Search:
             monitor (Monitor): A Monitor instance encapsulating a session, a database connection, and keyword arguments for constructing a search URL.
 
         Attributes:
-            page (playwright.Page): The Playwright page instance for fetching.
+            page (SeleniumPageWrapper): The page wrapper instance for fetching.
             db (Database): The database instance.
             kwargs (dict[str, str]): The search parameter components.
             codes (list[str, str]): The StreetEasy neighborhood codes corresponding to selected neighborhood names.
@@ -166,7 +166,7 @@ class Parser:
         Args:
             content (bytes): HTML content of a successful GET request to the search URL.
             db (Database): Database instance used for fetching listing IDs that already exist in the database.
-            page: Playwright page instance for fetching listing details.
+            page: Page wrapper instance for fetching listing details.
             kwargs: Search parameters from the form (min_price, max_price, areas, etc.)
 
         Attributes:

@@ -68,7 +68,7 @@ class Monitor:
         user_data_dir = os.path.expanduser('~/.streeteasy-chrome')
         options.add_argument(f'--user-data-dir={user_data_dir}')
 
-        self.driver = uc.Chrome(options=options, use_subprocess=True, version_main=144)
+        self.driver = uc.Chrome(options=options, use_subprocess=True)
         self.page = SeleniumPageWrapper(self.driver)
         return self
 
