@@ -4,7 +4,7 @@ Python script that checks StreetEasy for new rentals matching search criteria an
 Includes a Flask application that provides a messaging interface and displays contacted listings, plus optional helper scripts for setting up a cron job to run the script continuously.
 
 ### Features
-- Uses [Playwright](https://playwright.dev/) with stealth mode to bypass bot detection
+- Uses [undetected-chromedriver](https://github.com/ultrafunkamsterdam/undetected-chromedriver) to bypass bot detection
 - [BeautifulSoup4](https://pypi.org/project/beautifulsoup4/) for HTML parsing
 - SQLite database
 - Simple web app implemented with [Flask](https://flask.palletsprojects.com/en/3.0.x/), [Flask-WTF](https://flask-wtf.readthedocs.io/en/1.2.x/), [HTMX](https://htmx.org/), [Bootstrap](https://getbootstrap.com/) and [Tom Select](https://tom-select.js.org/)
@@ -72,10 +72,9 @@ $ pyenv local .venv
 ### Install requirements
 ```bash
 (.venv) $ pip install -r requirements.txt
-(.venv) $ playwright install chromium
 ```
 
-**Note:** The script opens a visible browser window to bypass bot detection. This requires a display (won't work in headless server environments without modification).
+**Note:** The script uses undetected-chromedriver which requires Chrome to be installed. It opens a visible browser window and uses a persistent profile at `~/.streeteasy-chrome` to maintain session state.
 
 ## Configuration
 
@@ -148,7 +147,7 @@ The `cron` directory contains helper scripts for running the monitor on a schedu
 - `start_cron.sh`: Starts the cron job from `cron.dat`
 - `stop_cron.sh`: Stops any active cron job
 
-**Note:** Cron jobs require a display environment since the script uses a visible browser. For headless servers, modify `monitor.py` to set `headless=True` (may trigger bot detection).
+**Note:** Cron jobs require a display environment since the script uses a visible browser. Headless mode is not recommended as it may trigger bot detection.
 
 ## Important Notes
 Whenever you send a message on StreetEasy, you will receive an automated email at the address you provide indicating that the listing has been contacted. You will then continue to receive automated messages about any updates to the listing (e.g. price changes, rental status). This means that if you run the script repeatedly, you will have a lot of emails to sort through, so you might want to create a new email address if you don't want to clog your inbox.
