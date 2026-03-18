@@ -81,65 +81,74 @@ class Search:
     def _try_solve_press_and_hold(self) -> bool:
         """Attempt to solve a press-and-hold CAPTCHA automatically."""
         try:
-            # Find the Cloudflare Turnstile iframe
-            turnstile_frame = None
-            for frame in self.page.frames:
-                if 'challenges.cloudflare.com' in frame.url:
-                    turnstile_frame = frame
-                    break
-
-            if not turnstile_frame:
-                # Try finding the iframe element and its content frame
-                iframe_el = self.page.query_selector('iframe[src*="challenges.cloudflare.com"], iframe[id*="turnstile"], iframe[title*="challenge"]')
-                if iframe_el:
-                    turnstile_frame = iframe_el.content_frame()
-
-            if not turnstile_frame:
-                print('  Could not find Turnstile iframe.')
-                return False
-
-            # Look for the interactive element inside the Turnstile iframe
-            selectors = [
-                'input[type="checkbox"]',
-                '#challenge-stage',
-                'div[id*="challenge"]',
-                'button',
-                'body',
-            ]
-
             target = None
-            for sel in selectors:
-                el = turnstile_frame.query_selector(sel)
-                if el and el.is_visible():
-                    target = el
-                    break
+            box = None
 
+            # Strategy 1: Find Cloudflare Turnstile iframe and click inside it
+            for frame in self.page.frames:
+                if 'challenges.cloudflare.com' in frame.url or 'turnstile' in frame.url:
+                    for sel in ['body', '#challenge-stage', 'input', 'button', 'div']:
+                        try:
+                            el = frame.query_selector(sel)
+                            if el:
+                                box = el.bounding_box()
+                                if box and box['width'] > 0:
+                                    target = el
+                                    print(f'  Found target in Turnstile frame: {sel}')
+                                    break
+                        except Exception:
+                            continue
+                    if target:
+                        break
+
+            # Strategy 2: Find any visible iframe that could be the challenge
+            # PerimeterX injects iframes with no src attribute
             if not target:
-                print('  Could not find challenge element inside Turnstile.')
-                return False
+                iframes = self.page.query_selector_all('iframe')
+                for iframe in iframes:
+                    try:
+                        iframe_box = iframe.bounding_box()
+                        if iframe_box and iframe_box['width'] > 40 and iframe_box['height'] > 20:
+                            src = iframe.get_attribute('src') or ''
+                            if not src or 'challenge' in src or 'captcha' in src or 'turnstile' in src or 'cloudflare' in src or 'px' in src:
+                                box = iframe_box
+                                target = iframe
+                                print(f'  Found challenge iframe: src="{src[:80]}" at ({box["x"]:.0f}, {box["y"]:.0f}) {box["width"]:.0f}x{box["height"]:.0f}')
+                                break
+                    except Exception:
+                        continue
 
-            box = target.bounding_box()
-            if not box:
+            # Strategy 3: Find any visible button/clickable on the main page
+            if not target:
+                for sel in ['[class*="challenge"]', '[id*="challenge"]', 'button:visible', '[role="button"]:visible']:
+                    try:
+                        el = self.page.query_selector(sel)
+                        if el and el.is_visible():
+                            box = el.bounding_box()
+                            if box and box['width'] > 20:
+                                target = el
+                                print(f'  Found target on page: {sel}')
+                                break
+                    except Exception:
+                        continue
+
+            if not target or not box:
+                print('  Could not find any challenge element.')
                 return False
 
             x = box['x'] + box['width'] / 2
             y = box['y'] + box['height'] / 2
 
-            # Human-like approach: move from a random starting point
-            self.page.mouse.move(
-                random.uniform(100, 400),
-                random.uniform(100, 400)
-            )
-            time.sleep(random.uniform(0.5, 1.0))
-
-            # Move toward the target with slight overshoot
+            # Human-like mouse movement
+            self.page.mouse.move(random.uniform(100, 400), random.uniform(100, 400))
+            time.sleep(random.uniform(0.3, 0.7))
             self.page.mouse.move(x + random.uniform(-5, 5), y + random.uniform(-5, 5))
-            time.sleep(random.uniform(0.2, 0.5))
+            time.sleep(random.uniform(0.1, 0.3))
 
             # Press and hold
-            print('  Pressing and holding challenge button...')
+            print(f'  Pressing and holding at ({x:.0f}, {y:.0f})...')
             self.page.mouse.down()
-            time.sleep(random.uniform(7, 12))
+            time.sleep(random.uniform(8, 13))
             self.page.mouse.up()
             time.sleep(3)
             return True
@@ -155,6 +164,23 @@ class Search:
             return True
 
         print('  Bot check detected — attempting automatic solve...')
+
+        # Debug: log what's on the page
+        try:
+            print(f'  Page title: {self.page.title()}')
+            print(f'  Frames: {len(self.page.frames)}')
+            for i, frame in enumerate(self.page.frames):
+                print(f'    Frame {i}: {frame.url[:100]}')
+            iframes = self.page.query_selector_all('iframe')
+            for i, iframe in enumerate(iframes):
+                src = iframe.get_attribute('src') or ''
+                box = iframe.bounding_box()
+                print(f'    iframe {i}: src={src[:100]} box={box}')
+        except Exception as e:
+            print(f'  Debug error: {e}')
+
+        # Wait a moment for challenge to fully render
+        time.sleep(2)
 
         # Try automated press-and-hold up to 3 times
         for attempt in range(3):
