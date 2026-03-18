@@ -4,21 +4,29 @@ Python script that checks StreetEasy for new rentals matching search criteria an
 Includes a Flask application that provides a messaging interface and displays contacted listings, plus optional helper scripts for setting up a cron job to run the script continuously.
 
 ### Features
-- Uses [undetected-chromedriver](https://github.com/ultrafunkamsterdam/undetected-chromedriver) to bypass bot detection
+- Uses [Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-python) (patched Playwright) to bypass bot detection at the CDP level
+- Persistent browser profile to maintain Cloudflare cookies between runs
+- Automatic press-and-hold CAPTCHA solver with manual fallback
+- Intercepts GraphQL API responses for accurate rental IDs and listing details
 - [BeautifulSoup4](https://pypi.org/project/beautifulsoup4/) for HTML parsing
-- SQLite database
-- Simple web app implemented with [Flask](https://flask.palletsprojects.com/en/3.0.x/), [Flask-WTF](https://flask-wtf.readthedocs.io/en/1.2.x/), [HTMX](https://htmx.org/), [Bootstrap](https://getbootstrap.com/) and [Tom Select](https://tom-select.js.org/)
+- SQLite database with beds, baths, building type, and description tracking
+- Dark-themed web dashboard with sortable columns, expandable descriptions, and stats
+- Built with [Flask](https://flask.palletsprojects.com/en/3.0.x/), [Flask-WTF](https://flask-wtf.readthedocs.io/en/1.2.x/), [HTMX](https://htmx.org/), [Bootstrap](https://getbootstrap.com/) and [Tom Select](https://tom-select.js.org/)
 - Integration with [Paddaddy](https://paddaddy.app/) for added rental info
+- Google Maps links for every listing
 - Advanced filtering: neighborhood, price range, street number, and description keywords
 - Dry run mode to preview listings before sending messages
 - Filters out senior housing, income-restricted, and lottery units
+- Rate-limited messaging to avoid API throttling
 
 ### How it works
-1. Constructs a StreetEasy URL corresponding to search criteria
-2. Scrapes, parses and filters listings from search results page
-3. Checks listing descriptions to filter out restricted housing
-4. Messages any listings that haven't already been contacted (unless dry run mode)
-5. Stores details of newly contacted listings in a database
+1. Warms up browser session by visiting StreetEasy homepage (establishes Cloudflare cookies)
+2. Constructs a StreetEasy URL corresponding to search criteria
+3. Intercepts GraphQL API responses to capture numeric rental IDs and listing details (beds, baths, type)
+4. Scrapes, parses and filters listings from search results pages (with pagination)
+5. Checks listing descriptions to filter out restricted housing
+6. Messages any listings that haven't already been contacted (unless dry run mode)
+7. Stores details of newly contacted listings in a database
 
 ## Table of Contents
 - [Usage](#Usage)
@@ -40,8 +48,10 @@ The application will run on port 8002 by default (can be changed in `app/app.py`
 (.venv) $ python -m app.app
 ```
 The application consists of:
+- Summary stats (total contacted, average price, lowest price, neighborhoods)
 - A form that can be used to check for listings based on specified criteria
-- A table listing every rental that has been contacted so far, sorted by most recent
+- A sortable table listing every rental that has been contacted, with expandable descriptions
+- Links to StreetEasy and Google Maps for each listing
 
 **Note:** The Flask form provides basic search options. Advanced filters (street number limits, description keyword filters) are configured in `config.py` and apply to all searches.
 
@@ -72,9 +82,10 @@ $ pyenv local .venv
 ### Install requirements
 ```bash
 (.venv) $ pip install -r requirements.txt
+(.venv) $ patchright install chromium
 ```
 
-**Note:** The script uses undetected-chromedriver which requires Chrome to be installed. It opens a visible browser window and uses a persistent profile at `~/.streeteasy-chrome` to maintain session state.
+**Note:** The script uses Patchright (a patched version of Playwright) which launches a Chromium browser. It opens a visible browser window and uses a persistent profile at `data/browser_profile/` to maintain session state and Cloudflare cookies between runs.
 
 ## Configuration
 
@@ -85,9 +96,11 @@ Edit the `.env` file to include your desired message, along with your phone numb
 MESSAGE='[YOUR MESSAGE]'
 PHONE='[YOUR PHONE NUMBER]'
 EMAIL='[YOUR EMAIL ADDRESS]'
-NAME='[YOUR NAME]'
+CONTACT_NAME='[YOUR NAME]'
 ```
 When the script runs, any matching listings will be sent the above information, and an automated email from StreetEasy will be sent to the address you provided indicating that the message has been sent.
+
+**Note:** Use `CONTACT_NAME` instead of `NAME` to avoid conflicts with system environment variables.
 
 *Note: this information is not visible or accessible anywhere other than your local `.env` file.*
 
