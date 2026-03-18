@@ -1,20 +1,83 @@
-<table class="table table-hover mt-2">
-    <thead>
-        <tr>
-            <th scope="col">Contacted</th>
-            <th scope="col">Address</th>
-            <th scope="col">Neighborhood</th>
-            <th scope="col">Price</th>
-        </tr>
-    </thead>
-    <tbody class="table-group-divider">
-        {% for listing in listings %}
-        <tr>
-            <td>{{ listing["created_at"] | format_datetime }}</td>
-            <td><a href='{{ listing["url"] }}' target="_blank">{{ listing["address"] }}</a></td>
-            <td>{{ listing["neighborhood"] }}</td>
-            <td>{{ listing["price"] | usd }}</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="table-responsive">
+    <table class="table table-hover table-dark mb-0" id="listings-table">
+        <thead>
+            <tr class="table-secondary">
+                <th scope="col" class="ps-3 sortable" data-sort="index" data-type="number">#</th>
+                <th scope="col" class="sortable" data-sort="date" data-type="date">Contacted</th>
+                <th scope="col" class="sortable" data-sort="address" data-type="string">Address</th>
+                <th scope="col" class="sortable" data-sort="neighborhood" data-type="string">Neighborhood</th>
+                <th scope="col" class="text-center sortable" data-sort="beds" data-type="number">Beds</th>
+                <th scope="col" class="text-center sortable" data-sort="baths" data-type="number">Baths</th>
+                <th scope="col" class="text-end sortable" data-sort="price" data-type="number">Price</th>
+                <th scope="col">Type</th>
+                <th scope="col" class="text-center">Links</th>
+            </tr>
+        </thead>
+        <tbody class="table-group-divider">
+            {% for listing in listings %}
+            <tr class="listing-row" data-bs-toggle="collapse" data-bs-target="#desc-{{ loop.index }}" style="cursor: pointer;">
+                <td class="ps-3 text-secondary" data-value="{{ loop.index }}">{{ loop.index }}</td>
+                <td data-value="{{ listing['created_at'] }}">
+                    <span class="text-secondary small">{{ listing["created_at"] | format_datetime }}</span>
+                </td>
+                <td data-value="{{ listing['address'] }}">
+                    <a href='{{ listing["url"] }}' target="_blank" class="text-decoration-none" onclick="event.stopPropagation();">
+                        {{ listing["address"] }}
+                    </a>
+                </td>
+                <td data-value="{{ listing['neighborhood'] }}">
+                    <span class="badge bg-secondary bg-opacity-50">{{ listing["neighborhood"] }}</span>
+                </td>
+                <td class="text-center" data-value="{{ listing.get('beds', '') }}">
+                    {% if listing.get('beds') is not none and listing.get('beds') != '' %}
+                        {{ listing['beds'] | int }} <span class="text-secondary small">bd</span>
+                    {% else %}
+                        <span class="text-secondary">-</span>
+                    {% endif %}
+                </td>
+                <td class="text-center" data-value="{{ listing.get('baths', '') }}">
+                    {% if listing.get('baths') is not none and listing.get('baths') != '' %}
+                        {% if listing['baths'] == listing['baths'] | int %}
+                            {{ listing['baths'] | int }}
+                        {% else %}
+                            {{ listing['baths'] }}
+                        {% endif %}
+                        <span class="text-secondary small">ba</span>
+                    {% else %}
+                        <span class="text-secondary">-</span>
+                    {% endif %}
+                </td>
+                <td class="text-end fw-bold {% if listing['price'] and listing['price']|float <= 3500 %}text-success{% elif listing['price'] and listing['price']|float >= 3900 %}text-warning{% endif %}" data-value="{{ listing['price'] }}">
+                    {{ listing["price"] | usd }}
+                </td>
+                <td data-value="{{ listing.get('building_type', '') }}">
+                    {% if listing.get('building_type') %}
+                        <span class="small text-secondary">{{ listing['building_type'] }}</span>
+                    {% endif %}
+                </td>
+                <td class="text-center text-nowrap" onclick="event.stopPropagation();">
+                    <a href="{{ listing['url'] }}" target="_blank" class="text-decoration-none me-1" title="View on StreetEasy">
+                        <i class="bi bi-box-arrow-up-right"></i>
+                    </a>
+                    <a href="https://www.google.com/maps/search/{{ listing['address'] | urlencode }}+NYC" target="_blank" class="text-decoration-none" title="View on Google Maps">
+                        <i class="bi bi-geo-alt"></i>
+                    </a>
+                </td>
+            </tr>
+            {% if listing.get('description') %}
+            <tr class="collapse" id="desc-{{ loop.index }}">
+                <td colspan="9" class="ps-5 pe-5 py-3 border-0" style="background-color: #1a1a3e;">
+                    <div class="small text-secondary" style="white-space: pre-line; max-width: 800px;">{{ listing['description'] }}</div>
+                </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% if not listings %}
+<div class="text-center text-secondary py-4">
+    <i class="bi bi-inbox fs-1"></i>
+    <p class="mt-2">No listings yet. Run a search to get started.</p>
+</div>
+{% endif %}

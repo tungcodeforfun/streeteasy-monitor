@@ -30,7 +30,32 @@ def create_app():
     @app.template_filter()
     def usd(value):
         """Format value as USD."""
-        return f'${int(value):,}'
+        try:
+            return f'${int(float(value)):,}'
+        except (ValueError, TypeError):
+            return '$0'
+
+    @app.template_filter()
+    def usd_raw(value):
+        """Format number with commas (no dollar sign)."""
+        try:
+            return f'{int(float(value)):,}'
+        except (ValueError, TypeError):
+            return '0'
+
+    def get_stats(listings):
+        """Compute summary stats for listings."""
+        if not listings:
+            return {'total': 0, 'avg_price': 0, 'min_price': 0, 'max_price': 0, 'neighborhoods': 0}
+        prices = [float(l['price']) for l in listings if l.get('price')]
+        neighborhoods = set(l['neighborhood'] for l in listings if l.get('neighborhood'))
+        return {
+            'total': len(listings),
+            'avg_price': sum(prices) / len(prices) if prices else 0,
+            'min_price': min(prices) if prices else 0,
+            'max_price': max(prices) if prices else 0,
+            'neighborhoods': len(neighborhoods),
+        }
 
     @app.template_filter()
     def format_datetime(created_at):
@@ -91,9 +116,11 @@ def create_app():
             print('Invalid form submission\n')
             return redirect(url_for('index'))
 
+        listings = db.get_listings_sorted()
         return render_template(
             'index.html',
-            listings=db.get_listings_sorted(),
+            listings=listings,
+            stats=get_stats(listings),
             form=SearchForm(),  # Use defaults from Config
         )
     

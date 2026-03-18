@@ -22,9 +22,19 @@ class Database:
                     url TEXT,
                     price REAL,
                     address TEXT,
-                    neighborhood TEXT
+                    neighborhood TEXT,
+                    beds REAL,
+                    baths REAL,
+                    building_type TEXT,
+                    source TEXT
                 )
             """)
+            # Add new columns to existing tables
+            for col, col_type in [('beds', 'REAL'), ('baths', 'REAL'), ('building_type', 'TEXT'), ('source', 'TEXT'), ('description', 'TEXT')]:
+                try:
+                    cursor.execute(f'ALTER TABLE listings ADD COLUMN {col} {col_type}')
+                except sqlite3.OperationalError:
+                    pass  # Column already exists
             conn.commit()
 
     def get_existing_ids(self):

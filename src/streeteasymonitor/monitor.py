@@ -1,49 +1,16 @@
+import os
+import random
+import time
 import requests
-import undetected_chromedriver as uc
+from patchright.sync_api import sync_playwright
 
 from src.streeteasymonitor.search import Search
 from src.streeteasymonitor.database import Database
 from src.streeteasymonitor.messager import Messager
 from src.streeteasymonitor.config import Config
 
-
-class SeleniumPageWrapper:
-    """Wrapper to make Selenium driver work with existing code expecting Playwright-like interface."""
-    def __init__(self, driver):
-        self.driver = driver
-        self._mouse = MouseWrapper(driver)
-
-    def goto(self, url, wait_until=None, timeout=None):
-        self.driver.get(url)
-
-    def content(self):
-        return self.driver.page_source
-
-    def wait_for_selector(self, selector, timeout=15000):
-        from selenium.webdriver.common.by import By
-        from selenium.webdriver.support.ui import WebDriverWait
-        from selenium.webdriver.support import expected_conditions as EC
-        # Convert CSS selector to work with Selenium
-        wait = WebDriverWait(self.driver, timeout / 1000)
-        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, selector)))
-
-    @property
-    def mouse(self):
-        return self._mouse
-
-    def close(self):
-        pass  # Driver closed separately
-
-
-class MouseWrapper:
-    def __init__(self, driver):
-        self.driver = driver
-
-    def move(self, x, y):
-        from selenium.webdriver.common.action_chains import ActionChains
-        action = ActionChains(self.driver)
-        action.move_by_offset(x, y).perform()
-        action.reset_actions()
+# Persistent browser profile directory
+PROFILE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', 'data', 'browser_profile')
 
 
 class Monitor:
@@ -55,26 +22,54 @@ class Monitor:
         self.session = requests.Session()
         self.session.headers.update(self.config.get_headers())
 
-        self.driver = None
+        # Playwright for fetching pages
+        self.playwright = None
+        self.context = None
         self.page = None
 
         self.kwargs = kwargs
 
     def __enter__(self):
-        import os
-        options = uc.ChromeOptions()
-        options.add_argument('--window-size=1280,800')
-        # Use persistent profile
-        user_data_dir = os.path.expanduser('~/.streeteasy-chrome')
-        options.add_argument(f'--user-data-dir={user_data_dir}')
-
-        self.driver = uc.Chrome(options=options, use_subprocess=True)
-        self.page = SeleniumPageWrapper(self.driver)
+        self.playwright = sync_playwright().start()
+        self.context = self.playwright.chromium.launch_persistent_context(
+            user_data_dir=os.path.abspath(PROFILE_DIR),
+            channel='chromium',
+            headless=False,
+            no_viewport=True,
+            ignore_default_args=['--enable-automation'],
+            args=[
+                '--disable-blink-features=AutomationControlled',
+                '--no-sandbox',
+                '--start-maximized',
+            ],
+        )
+        self.page = self.context.pages[0] if self.context.pages else self.context.new_page()
+        self._warmup()
         return self
 
+    def _warmup(self):
+        """Visit StreetEasy homepage first to establish cookies and session."""
+        from src.streeteasymonitor.search import Search
+        print('Warming up browser session...')
+        self.page.goto('https://streeteasy.com/', wait_until='domcontentloaded', timeout=30000)
+        time.sleep(random.uniform(2, 4))
+        # Handle bot detection during warmup
+        dummy = type('obj', (object,), {'page': self.page, 'db': None, 'kwargs': {}})()
+        search = Search.__new__(Search)
+        search.page = self.page
+        if search._is_bot_check():
+            print('  Bot check on homepage — solving...')
+            search._wait_for_bot_check()
+            time.sleep(random.uniform(1, 2))
+
     def __exit__(self, *args, **kwargs):
-        if self.driver:
-            self.driver.quit()
+        try:
+            if self.context:
+                self.context.close()
+        except Exception:
+            pass
+        if self.playwright:
+            self.playwright.stop()
         self.session.close()
 
     def run(self):

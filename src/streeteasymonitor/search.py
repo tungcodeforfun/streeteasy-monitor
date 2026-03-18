@@ -66,14 +66,157 @@ class Search:
         self.url = build_url(**self.parameters)
         self.listings = []
 
+    def _is_bot_check(self) -> bool:
+        """Check if the current page is a bot detection challenge."""
+        title = self.page.title().lower()
+        content = self.page.content().lower()
+        return (
+            'captcha' in content
+            or 'press & hold' in content
+            or 'verify you are human' in content
+            or 'just a moment' in title
+            or 'attention required' in title
+        )
+
+    def _try_solve_press_and_hold(self) -> bool:
+        """Attempt to solve a press-and-hold CAPTCHA automatically."""
+        try:
+            # Find the Cloudflare Turnstile iframe
+            turnstile_frame = None
+            for frame in self.page.frames:
+                if 'challenges.cloudflare.com' in frame.url:
+                    turnstile_frame = frame
+                    break
+
+            if not turnstile_frame:
+                # Try finding the iframe element and its content frame
+                iframe_el = self.page.query_selector('iframe[src*="challenges.cloudflare.com"], iframe[id*="turnstile"], iframe[title*="challenge"]')
+                if iframe_el:
+                    turnstile_frame = iframe_el.content_frame()
+
+            if not turnstile_frame:
+                print('  Could not find Turnstile iframe.')
+                return False
+
+            # Look for the interactive element inside the Turnstile iframe
+            selectors = [
+                'input[type="checkbox"]',
+                '#challenge-stage',
+                'div[id*="challenge"]',
+                'button',
+                'body',
+            ]
+
+            target = None
+            for sel in selectors:
+                el = turnstile_frame.query_selector(sel)
+                if el and el.is_visible():
+                    target = el
+                    break
+
+            if not target:
+                print('  Could not find challenge element inside Turnstile.')
+                return False
+
+            box = target.bounding_box()
+            if not box:
+                return False
+
+            x = box['x'] + box['width'] / 2
+            y = box['y'] + box['height'] / 2
+
+            # Human-like approach: move from a random starting point
+            self.page.mouse.move(
+                random.uniform(100, 400),
+                random.uniform(100, 400)
+            )
+            time.sleep(random.uniform(0.5, 1.0))
+
+            # Move toward the target with slight overshoot
+            self.page.mouse.move(x + random.uniform(-5, 5), y + random.uniform(-5, 5))
+            time.sleep(random.uniform(0.2, 0.5))
+
+            # Press and hold
+            print('  Pressing and holding challenge button...')
+            self.page.mouse.down()
+            time.sleep(random.uniform(7, 12))
+            self.page.mouse.up()
+            time.sleep(3)
+            return True
+
+        except Exception as e:
+            print(f'  Auto-solve error: {e}')
+        return False
+
+    def _wait_for_bot_check(self, timeout=90) -> bool:
+        """If a bot check is present, try to solve it automatically, then fall back to manual.
+        Returns True if page is ready."""
+        if not self._is_bot_check():
+            return True
+
+        print('  Bot check detected — attempting automatic solve...')
+
+        # Try automated press-and-hold up to 3 times
+        for attempt in range(3):
+            self._try_solve_press_and_hold()
+            time.sleep(3)
+            if not self._is_bot_check():
+                print('  Bot check passed automatically!')
+                time.sleep(2)
+                return True
+            print(f'  Auto-solve attempt {attempt + 1} failed.')
+
+        # Fall back to manual solving
+        print('  Please solve the challenge manually in the browser window.')
+        start = time.time()
+        while time.time() - start < timeout:
+            time.sleep(3)
+            if not self._is_bot_check():
+                print('  Bot check passed!')
+                time.sleep(2)
+                return True
+
+        print(f'  Bot check not resolved within {timeout}s.')
+        return False
+
+    def _capture_rental_ids(self, response):
+        """Intercept GraphQL API responses to extract rental IDs and listing details."""
+        if 'api-v6.streeteasy.com' not in response.url:
+            return
+        try:
+            body = response.json()
+            edges = body.get('data', {}).get('searchRentals', {}).get('edges', [])
+            for edge in edges:
+                node = edge.get('node', {})
+                rental_id = node.get('id')
+                url_path = node.get('urlPath', '')
+                if rental_id and url_path:
+                    full_url = f'https://streeteasy.com{url_path}'
+                    self._rental_id_map[full_url] = rental_id
+                    self._listing_details[full_url] = {
+                        'beds': node.get('bedroomCount'),
+                        'baths': (node.get('fullBathroomCount', 0) or 0) + (node.get('halfBathroomCount', 0) or 0) * 0.5,
+                        'status': (node.get('status') or '').capitalize(),
+                        'building_type': (node.get('buildingType') or '').replace('_', ' ').capitalize(),
+                        'source': node.get('sourceGroupLabel', ''),
+                    }
+        except Exception:
+            pass
+
     def fetch(self) -> list[dict[str, str]]:
         """Check the search URL for new listings, paginating through all results."""
+
         print(f'Running script with parameters:\n{json.dumps(self.parameters, indent=2)}\n')
         print(f'Base URL: {self.url}')
 
         all_listings = []
         page_num = 1
         seen_ids = set()  # Track listing IDs to detect when we've seen all listings
+        self._rental_id_map = {}  # URL -> numeric rental ID from API
+        self._listing_details = {}  # URL -> {beds, baths, status, ...} from API
+
+        # Listen for API responses to capture rental IDs
+        self.page.on('response', self._capture_rental_ids)
 
         try:
             while True:
@@ -84,27 +227,10 @@ class Search:
 
                 self.page.goto(page_url, wait_until='domcontentloaded', timeout=60000)
 
-                # Human-like delay after page load
-                time.sleep(random.uniform(2, 4))
-
-                # Check for bot detection captcha
-                content = self.page.content()
-                if 'Press & Hold' in content or 'confirm you are' in content:
-                    print('\n*** Bot detection triggered! ***')
-                    print('Please complete the "Press & Hold" captcha in the browser window.')
-                    print('Waiting for you to complete it...')
-                    # Wait up to 60 seconds for captcha to be completed
-                    for _ in range(60):
-                        time.sleep(1)
-                        content = self.page.content()
-                        if 'Press & Hold' not in content and 'confirm you are' not in content:
-                            print('Captcha completed!')
-                            break
-                    time.sleep(random.uniform(2, 4))
-
-                # Simulate mouse movement to appear more human
-                self.page.mouse.move(random.randint(100, 500), random.randint(100, 400))
-                time.sleep(random.uniform(0.5, 1.5))
+                # Check for bot detection
+                if not self._wait_for_bot_check():
+                    print('Stopping due to bot detection.')
+                    break
 
                 # Wait for listing cards to appear
                 try:
@@ -114,32 +240,38 @@ class Search:
                     break
 
                 content = self.page.content()
-                parser = Parser(content.encode(), self.db, self.page, self.kwargs)
-                page_listings = parser.listings
+                parser = Parser(content.encode(), self.db, self.page, self.kwargs, self._rental_id_map, self._listing_details)
 
-                # Check if we're seeing duplicate listings (end of results)
-                new_listings = []
-                for listing in page_listings:
-                    if listing['listing_id'] not in seen_ids:
-                        seen_ids.add(listing['listing_id'])
-                        new_listings.append(listing)
+                # Parse all cards (before filtering) to check for pagination end
+                all_cards = parser.soup.select('[data-testid="listing-card"]')
+                parsed_all = [parser.parse(card) for card in all_cards]
+                new_card_ids = [p['listing_id'] for p in parsed_all if p['listing_id'] not in seen_ids]
+                seen_ids.update(p['listing_id'] for p in parsed_all)
 
-                print(f'Found {len(new_listings)} new listings on page {page_num}')
+                # Get filtered listings for messaging
+                page_listings = [card for card in parsed_all if parser.filter(card)]
 
-                if not new_listings:
-                    print(f'No new unique listings on page {page_num}, stopping pagination.')
+                print(f'Found {len(page_listings)} new listings on page {page_num}')
+
+                if not new_card_ids:
+                    print(f'No new unique cards on page {page_num}, stopping pagination.')
                     break
 
-                all_listings.extend(new_listings)
+                all_listings.extend(page_listings)
 
-                # Add random delay between pages to avoid rate limiting
-                time.sleep(random.uniform(3, 6))
+                # Randomized delay between pages to appear more human
+                delay = random.uniform(3, 7)
+                print(f'  Waiting {delay:.1f}s before next page...')
+                time.sleep(delay)
                 page_num += 1
 
         except Exception as e:
             print(f'{get_datetime()} Error fetching page: {e}\n')
             import traceback
             traceback.print_exc()
+
+        # Stop listening for API responses
+        self.page.remove_listener('response', self._capture_rental_ids)
 
         self.listings = all_listings
 
@@ -160,7 +292,7 @@ class Parser:
 
     price_pattern = re.compile(r'[$,]')
 
-    def __init__(self, content: bytes, db, page=None, kwargs=None) -> None:
+    def __init__(self, content: bytes, db, page=None, kwargs=None, rental_id_map=None, listing_details=None) -> None:
         """Initialize the parse object.
 
         Args:
@@ -168,6 +300,8 @@ class Parser:
             db (Database): Database instance used for fetching listing IDs that already exist in the database.
             page: Page wrapper instance for fetching listing details.
             kwargs: Search parameters from the form (min_price, max_price, areas, etc.)
+            rental_id_map: URL -> numeric rental ID mapping from intercepted API responses.
+            listing_details: URL -> {beds, baths, status, ...} from intercepted API responses.
 
         Attributes:
             soup (bs4.BeautifulSoup): Beautiful Soup object for parsing HTML contents.
@@ -178,6 +312,8 @@ class Parser:
         self.existing_ids = db.get_existing_ids()
         self.page = page
         self.kwargs = kwargs or {}
+        self.rental_id_map = rental_id_map or {}
+        self.listing_details = listing_details or {}
         self._description_cache = {}
 
     def parse(self, card) -> dict[str, str]:
@@ -187,9 +323,10 @@ class Parser:
         url = link['href'] if link else ''
         address = link.text.strip() if link else ''
 
-        # Extract listing ID from URL (e.g., /building/name/unit-id)
-        listing_id = ''
-        if url:
+        # Get numeric rental ID from intercepted API response
+        listing_id = self.rental_id_map.get(url, '')
+        if not listing_id and url:
+            # Fallback: extract slug from URL
             match = re.search(r'/building/[^/]+/([^?]+)', url)
             if match:
                 listing_id = match.group(1)
@@ -212,12 +349,19 @@ class Parser:
             if ' in ' in title_text:
                 neighborhood = title_text.split(' in ')[-1].strip()
 
+        # Get extra details from API response
+        details = self.listing_details.get(url, {})
+
         return {
             'listing_id': listing_id,
             'url': url,
             'price': price,
             'address': address,
             'neighborhood': neighborhood,
+            'beds': details.get('beds', ''),
+            'baths': details.get('baths', ''),
+            'building_type': details.get('building_type', ''),
+            'source': details.get('source', ''),
         }
 
     # Pattern to extract street number from address (e.g., "123 East 45th Street" -> 45)
@@ -278,6 +422,7 @@ class Parser:
         try:
             price = int(target.get('price', 0))
             if price < min_price or price > max_price:
+                print(f"  FILTERED: {target['address']} - price ${price} outside range ${min_price}-${max_price}")
                 return False
         except (ValueError, TypeError):
             pass
@@ -289,6 +434,7 @@ class Parser:
             # Check if neighborhood matches any configured area (case-insensitive partial match)
             if not any(area.lower() in neighborhood.lower() or neighborhood.lower() in area.lower()
                        for area in configured_areas):
+                print(f"  FILTERED: {target['address']} - neighborhood '{neighborhood}' not in configured areas")
                 return False
 
         # Filter out addresses above max street number

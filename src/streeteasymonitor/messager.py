@@ -1,3 +1,6 @@
+import random
+import time
+
 from .config import Config
 from .utils import get_datetime, export_to_csv
 
@@ -147,6 +150,9 @@ class Messager:
                     self.db.insert_new_listing(listing)
                 else:
                     print('  Error sending message: Failed to submit message\n')
+                # Delay between messages to avoid rate limiting
+                delay = random.uniform(2, 5)
+                time.sleep(delay)
             except Exception as e:
                 print(f'  Error sending message: {e}\n')
 
